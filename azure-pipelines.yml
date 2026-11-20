@@ -33,9 +33,7 @@ steps:
   # (jf poetry is not used for resolution: it rewrites the source URL without /simple.)
   - bash: |
       set -euo pipefail
-      curl -s -o /tmp/oidc.json -w "OIDC request HTTP %{http_code}\n" -X POST -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" || true
-      head -c 300 /tmp/oidc.json | sed -E 's/eyJ[A-Za-z0-9._-]{20,}/<jwt>/g'; echo
-      ID_TOKEN=$(curl -sf -X POST -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
+      ID_TOKEN=$(curl -sf -X POST -d "" -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
         "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" \
         | python3 -c 'import sys,json;print(json.load(sys.stdin)["oidcToken"])')
       echo "##vso[task.setvariable variable=ADO_ID_TOKEN;issecret=true]$ID_TOKEN"
