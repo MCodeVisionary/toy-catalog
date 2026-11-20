@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "toy-catalog"
+version = "0.1.0"
+description = "Sample toy product catalog generated from random JSON data"
+authors = ["Maharshi Patel <maharship@jfrog.com>"]
+readme = "README.md"
+packages = [{ include = "toy_catalog", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[tool.poetry.scripts]
+toy-catalog = "toy_catalog.cli:main"
+
+[[tool.poetry.source]]
+name = "alpha-pypi-virtual"
+url = "https://solenglatest.jfrog.io/artifactory/api/pypi/alpha-pypi-virtual/simple"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

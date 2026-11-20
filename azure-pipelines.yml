@@ -1,0 +1,83 @@
+# Build toy-catalog with Poetry, authenticate to JFrog via OIDC (no stored tokens),
+# publish to the alpha-pypi-virtual repo and push build-info with JFrog CLI.
+trigger:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  JFROG_PLATFORM_URL: https://solenglatest.jfrog.io
+  JFROG_SERVER_ID: solenglatest
+  JFROG_OIDC_PROVIDER: azure-devops-oidc           # OIDC integration name in JFrog Platform
+  PYPI_REPO: alpha-pypi-virtual
+  AZURE_SERVICE_CONNECTION: azure-oidc-connection  # ARM service connection using workload identity federation
+  JFROG_CLI_BUILD_NAME: toy-catalog
+  JFROG_CLI_BUILD_NUMBER: $(Build.BuildId)
+  JFROG_CLI_BUILD_URL: $(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.12'
+
+  - bash: |
+      set -euo pipefail
+      python -m pip install --upgrade pip poetry
+      curl -fL https://install-cli.jfrog.io | sh
+      jf --version && poetry --version
+    displayName: Install Poetry and JFrog CLI
+
+  # Azure DevOps issues an ID token for the workload-identity service connection ($idToken);
+  # JFrog exchanges it for a short-lived access token. No long-lived secret is stored.
+  - task: AzureCLI@2
+    displayName: JFrog OIDC login
+    inputs:
+      azureSubscription: $(AZURE_SERVICE_CONNECTION)
+      scriptType: bash
+      scriptLocation: inlineScript
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -euo pipefail
+        RESP=$(jf eot --url="$(JFROG_PLATFORM_URL)" \
+          --oidc-provider-name="$(JFROG_OIDC_PROVIDER)" \
+          --oidc-provider-type=Azure \
+          --oidc-token-id="$idToken" --format=json)
+        TOKEN=$(python3 -c 'import sys,json; d=json.loads(sys.stdin.read()); print(d.get("accessToken") or d.get("access_token"))' <<<"$RESP")
+        echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+        jf c add "$(JFROG_SERVER_ID)" --url="$(JFROG_PLATFORM_URL)" \
+          --access-token="$TOKEN" --interactive=false
+        jf c use "$(JFROG_SERVER_ID)"
+        jf rt ping
+
+  - bash: |
+      set -euo pipefail
+      poetry install --no-interaction
+      poetry run pytest -q
+    displayName: Poetry install (via alpha-pypi-virtual) and test
+    env:
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: oidc
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
+
+  - bash: |
+      set -euo pipefail
+      poetry build
+      ls -l dist
+    displayName: Poetry build
+
+  - bash: |
+      set -euo pipefail
+      jf rt upload "dist/*" "$(PYPI_REPO)/" --module=toy-catalog \
+        --build-name="$(JFROG_CLI_BUILD_NAME)" --build-number="$(JFROG_CLI_BUILD_NUMBER)"
+    displayName: Publish to $(PYPI_REPO)
+
+  - bash: |
+      set -euo pipefail
+      jf rt build-collect-env "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
+      jf rt build-add-git     "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
+      jf rt build-publish     "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
+    displayName: Collect and publish build-info
