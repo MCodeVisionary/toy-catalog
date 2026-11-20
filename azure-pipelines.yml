@@ -22,47 +22,49 @@ steps:
     inputs:
       versionSpec: '3.12'
 
-  # Installs JFrog CLI, exchanges the Azure DevOps OIDC token for a short-lived JFrog token
-  # and registers the server config on the agent for the following steps.
+  - bash: python -m pip install --upgrade pip poetry && poetry --version
+    displayName: Install Poetry
+
+  # Each JfrogCliV2 step exchanges the Azure DevOps OIDC token for a short-lived JFrog token.
   - task: JfrogCliV2@1
-    displayName: JFrog OIDC login
+    displayName: Configure Poetry resolution from $(PYPI_REPO)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf rt ping
-      registerInPath: true
+      command: poetry-config --repo-resolve=$(PYPI_REPO)
+
+  - task: JfrogCliV2@1
+    displayName: Poetry install via JFrog (collects dependencies for build-info)
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
 
   - bash: |
       set -euo pipefail
-      python -m pip install --upgrade pip poetry
-      # Short-lived OIDC-issued token (masked) so Poetry can resolve through the virtual repo.
-      TOKEN=$(jf config export | base64 -d | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
-      echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
-    displayName: Install Poetry and prepare resolver credentials
-
-  - bash: |
-      set -euo pipefail
-      poetry install --no-interaction
       poetry run pytest -q
-    displayName: Poetry install (via alpha-pypi-virtual) and test
-    env:
-      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: oidc
-      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
-
-  - bash: |
-      set -euo pipefail
       poetry build
       ls -l dist
-    displayName: Poetry build
+    displayName: Test and poetry build
 
-  - bash: |
-      set -euo pipefail
-      jf rt upload "dist/*" "$(PYPI_REPO)/" --module=toy-catalog \
-        --build-name="$(BUILD_NAME)" --build-number="$(BUILD_NUMBER)"
+  - task: JfrogCliV2@1
     displayName: Publish to $(PYPI_REPO)
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: rt upload "dist/*" $(PYPI_REPO)/ --module=toy-catalog --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER)
 
-  - bash: |
-      set -euo pipefail
-      jf rt build-collect-env "$(BUILD_NAME)" "$(BUILD_NUMBER)"
-      jf rt build-add-git     "$(BUILD_NAME)" "$(BUILD_NUMBER)"
-      jf rt build-publish     "$(BUILD_NAME)" "$(BUILD_NUMBER)"
-    displayName: Collect and publish build-info
+  - task: JfrogCliV2@1
+    displayName: Collect environment variables
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
+
+  - task: JfrogCliV2@1
+    displayName: Collect git info
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
+
+  - task: JfrogCliV2@1
+    displayName: Publish build-info
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
