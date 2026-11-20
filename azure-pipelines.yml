@@ -1,5 +1,6 @@
-# Build toy-catalog with Poetry, authenticate to JFrog via OIDC (no stored tokens),
-# publish to the alpha-pypi-virtual repo and push build-info with JFrog CLI.
+# Build toy-catalog with Poetry, authenticate to JFrog via OIDC (JFrog Platform service
+# connection configured with an OIDC provider - no stored tokens), publish to the
+# alpha-pypi-virtual repo and push build-info with JFrog CLI.
 trigger:
   branches:
     include: [main]
@@ -8,14 +9,10 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  JFROG_PLATFORM_URL: https://solenglatest.jfrog.io
-  JFROG_SERVER_ID: solenglatest
-  JFROG_OIDC_PROVIDER: azure-devops-oidc           # OIDC integration name in JFrog Platform
+  JFROG_CONNECTION: mpate-solenglatest-platform   # JFrog Platform service connection (OIDC provider soleng-ado-mp)
   PYPI_REPO: alpha-pypi-virtual
-  AZURE_SERVICE_CONNECTION: azure-oidc-connection  # ARM service connection using workload identity federation
-  JFROG_CLI_BUILD_NAME: toy-catalog
-  JFROG_CLI_BUILD_NUMBER: $(Build.BuildId)
-  JFROG_CLI_BUILD_URL: $(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+  BUILD_NAME: toy-catalog
+  BUILD_NUMBER: $(Build.BuildId)
 
 steps:
   - checkout: self
@@ -25,34 +22,22 @@ steps:
     inputs:
       versionSpec: '3.12'
 
+  # Installs JFrog CLI, exchanges the Azure DevOps OIDC token for a short-lived JFrog token
+  # and registers the server config on the agent for the following steps.
+  - task: JfrogCliV2@1
+    displayName: JFrog OIDC login
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: jf rt ping
+      registerInPath: true
+
   - bash: |
       set -euo pipefail
       python -m pip install --upgrade pip poetry
-      curl -fL https://install-cli.jfrog.io | sh
-      jf --version && poetry --version
-    displayName: Install Poetry and JFrog CLI
-
-  # Azure DevOps issues an ID token for the workload-identity service connection ($idToken);
-  # JFrog exchanges it for a short-lived access token. No long-lived secret is stored.
-  - task: AzureCLI@2
-    displayName: JFrog OIDC login
-    inputs:
-      azureSubscription: $(AZURE_SERVICE_CONNECTION)
-      scriptType: bash
-      scriptLocation: inlineScript
-      addSpnToEnvironment: true
-      inlineScript: |
-        set -euo pipefail
-        RESP=$(jf eot --url="$(JFROG_PLATFORM_URL)" \
-          --oidc-provider-name="$(JFROG_OIDC_PROVIDER)" \
-          --oidc-provider-type=Azure \
-          --oidc-token-id="$idToken" --format=json)
-        TOKEN=$(python3 -c 'import sys,json; d=json.loads(sys.stdin.read()); print(d.get("accessToken") or d.get("access_token"))' <<<"$RESP")
-        echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
-        jf c add "$(JFROG_SERVER_ID)" --url="$(JFROG_PLATFORM_URL)" \
-          --access-token="$TOKEN" --interactive=false
-        jf c use "$(JFROG_SERVER_ID)"
-        jf rt ping
+      # Short-lived OIDC-issued token (masked) so Poetry can resolve through the virtual repo.
+      TOKEN=$(jf config export | base64 -d | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
+      echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+    displayName: Install Poetry and prepare resolver credentials
 
   - bash: |
       set -euo pipefail
@@ -72,12 +57,12 @@ steps:
   - bash: |
       set -euo pipefail
       jf rt upload "dist/*" "$(PYPI_REPO)/" --module=toy-catalog \
-        --build-name="$(JFROG_CLI_BUILD_NAME)" --build-number="$(JFROG_CLI_BUILD_NUMBER)"
+        --build-name="$(BUILD_NAME)" --build-number="$(BUILD_NUMBER)"
     displayName: Publish to $(PYPI_REPO)
 
   - bash: |
       set -euo pipefail
-      jf rt build-collect-env "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
-      jf rt build-add-git     "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
-      jf rt build-publish     "$(JFROG_CLI_BUILD_NAME)" "$(JFROG_CLI_BUILD_NUMBER)"
+      jf rt build-collect-env "$(BUILD_NAME)" "$(BUILD_NUMBER)"
+      jf rt build-add-git     "$(BUILD_NAME)" "$(BUILD_NUMBER)"
+      jf rt build-publish     "$(BUILD_NAME)" "$(BUILD_NUMBER)"
     displayName: Collect and publish build-info
