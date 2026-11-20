@@ -30,7 +30,7 @@ steps:
     displayName: Configure Poetry resolution from $(PYPI_REPO)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: poetry-config --repo-resolve=$(PYPI_REPO)
+      command: jf poetry-config --repo-resolve=$(PYPI_REPO)
 
   - task: JfrogCliV2@1
     displayName: Poetry install via JFrog (collects dependencies for build-info)
