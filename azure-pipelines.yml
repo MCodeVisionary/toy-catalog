@@ -41,6 +41,10 @@ steps:
         -d "{\"grant_type\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"subject_token\":\"$ID_TOKEN\",\"provider_name\":\"$(JFROG_OIDC_PROVIDER)\",\"audience\":\"api://AzureADTokenExchange\"}")
       TOKEN=$(python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' <<<"$RESP")
       echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+      # Artifactory basic auth needs the username to match the token subject (user part of 'sub').
+      TOKEN_USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);sub=json.loads(base64.urlsafe_b64decode(t))["sub"];print(sub.split("/users/")[-1])' "$TOKEN")
+      echo "Token subject user: $TOKEN_USER"
+      echo "##vso[task.setvariable variable=JFROG_TOKEN_USER]$TOKEN_USER"
     displayName: JFrog OIDC token exchange for Poetry
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -50,7 +54,7 @@ steps:
       poetry install --no-interaction
     displayName: Poetry install (resolves from $(PYPI_REPO))
     env:
-      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: oidc
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
       POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
 
   - bash: |
