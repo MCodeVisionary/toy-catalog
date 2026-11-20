@@ -36,7 +36,7 @@ steps:
     displayName: Poetry install via JFrog (collects dependencies for build-info)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
+      command: jf poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
 
   - bash: |
       set -euo pipefail
@@ -49,22 +49,22 @@ steps:
     displayName: Publish to $(PYPI_REPO)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: rt upload "dist/*" $(PYPI_REPO)/ --module=toy-catalog --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER)
+      command: jf rt upload "dist/*" $(PYPI_REPO)/ --module=toy-catalog --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER)
 
   - task: JfrogCliV2@1
     displayName: Collect environment variables
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
+      command: jf rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
 
   - task: JfrogCliV2@1
     displayName: Collect git info
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
+      command: jf rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
 
   - task: JfrogCliV2@1
     displayName: Publish build-info
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
+      command: jf rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
