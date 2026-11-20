@@ -10,6 +10,9 @@ pool:
 
 variables:
   JFROG_CONNECTION: mpate-solenglatest-platform   # JFrog Platform service connection (OIDC provider soleng-ado-mp)
+  JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
+  JFROG_OIDC_PROVIDER: soleng-ado-mp
+  JFROG_URL: https://solenglatest.jfrog.io
   PYPI_REPO: alpha-pypi-virtual
   BUILD_NAME: toy-catalog
   BUILD_NUMBER: $(Build.BuildId)
@@ -25,14 +28,30 @@ steps:
   - bash: python -m pip install --upgrade pip poetry && poetry --version
     displayName: Install Poetry
 
-  # Each JfrogCliV2 step exchanges the Azure DevOps OIDC token for a short-lived JFrog token.
-  - task: JfrogCliV2@1
-    displayName: Poetry install via JFrog (collects dependencies for build-info)
-    inputs:
-      jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: |
-        jf poetry-config --repo-resolve=$(PYPI_REPO)
-        jf poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
+  # OIDC for Poetry: request the Azure DevOps ID token of the JFrog service connection and exchange
+  # it at JFrog (provider soleng-ado-mp) for a short-lived access token. Nothing is stored.
+  # (jf poetry is not used for resolution: it rewrites the source URL without /simple.)
+  - bash: |
+      set -euo pipefail
+      ID_TOKEN=$(curl -sf -X POST -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
+        "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" \
+        | python3 -c 'import sys,json;print(json.load(sys.stdin)["oidcToken"])')
+      echo "##vso[task.setvariable variable=ADO_ID_TOKEN;issecret=true]$ID_TOKEN"
+      RESP=$(curl -sf -X POST "$(JFROG_URL)/access/api/v1/oidc/token" -H "Content-Type: application/json" \
+        -d "{\"grant_type\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"subject_token\":\"$ID_TOKEN\",\"provider_name\":\"$(JFROG_OIDC_PROVIDER)\",\"audience\":\"api://AzureADTokenExchange\"}")
+      TOKEN=$(python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' <<<"$RESP")
+      echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+    displayName: JFrog OIDC token exchange for Poetry
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - bash: |
+      set -euo pipefail
+      poetry install --no-interaction
+    displayName: Poetry install (resolves from $(PYPI_REPO))
+    env:
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: oidc
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
 
   - bash: |
       set -euo pipefail
