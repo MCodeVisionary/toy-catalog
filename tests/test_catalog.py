@@ -28,3 +28,18 @@ def test_cli_roundtrip(tmp_path, capsys):
     assert main(["generate", "-n", "5", "--seed", "1", "-o", str(out)]) == 0
     assert main(["list", "-f", str(out)]) == 0
     assert "5 item(s)" in capsys.readouterr().out
+
+
+def test_search_and_stats(tmp_path, capsys):
+    from toy_catalog.stats import category_summary, search
+
+    products = generate_products(40, seed=5)
+    hits = search(products, "TURBO")
+    assert all("turbo" in p["name"].lower() for p in hits)
+    summary = category_summary(products)
+    assert sum(v["count"] for v in summary.values()) == 40
+
+    out = tmp_path / "p.json"
+    main(["generate", "-n", "10", "--seed", "2", "-o", str(out)])
+    assert main(["stats", "-f", str(out)]) == 0
+    assert "CATEGORY" in capsys.readouterr().out

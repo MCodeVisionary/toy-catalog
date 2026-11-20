@@ -6,6 +6,7 @@ import argparse
 
 from .catalog import filter_by_category, format_catalog, load_products
 from .generator import generate_products, save_products
+from .stats import category_summary, format_summary, search
 
 DEFAULT_FILE = "products.json"
 
@@ -23,10 +24,21 @@ def main(argv: list[str] | None = None) -> int:
     lst.add_argument("-f", "--file", default=DEFAULT_FILE)
     lst.add_argument("-c", "--category")
 
+    srch = sub.add_parser("search", help="search products by name")
+    srch.add_argument("term")
+    srch.add_argument("-f", "--file", default=DEFAULT_FILE)
+
+    stats = sub.add_parser("stats", help="per-category price summary")
+    stats.add_argument("-f", "--file", default=DEFAULT_FILE)
+
     args = parser.parse_args(argv)
     if args.command == "generate":
         path = save_products(generate_products(args.count, args.seed), args.output)
         print(f"Wrote {args.count} products to {path}")
+    elif args.command == "search":
+        print(format_catalog(search(load_products(args.file), args.term)))
+    elif args.command == "stats":
+        print(format_summary(category_summary(load_products(args.file))))
     else:
         print(format_catalog(filter_by_category(load_products(args.file), args.category)))
     return 0
