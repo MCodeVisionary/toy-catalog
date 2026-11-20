@@ -30,7 +30,9 @@ steps:
     displayName: Poetry install via JFrog (collects dependencies for build-info)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
+      command: |
+        jf poetry-config --repo-resolve=$(PYPI_REPO)
+        jf poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
 
   - bash: |
       set -euo pipefail
