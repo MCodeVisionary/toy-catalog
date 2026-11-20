@@ -27,12 +27,6 @@ steps:
 
   # Each JfrogCliV2 step exchanges the Azure DevOps OIDC token for a short-lived JFrog token.
   - task: JfrogCliV2@1
-    displayName: Configure Poetry resolution from $(PYPI_REPO)
-    inputs:
-      jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf poetry-config --repo-resolve=$(PYPI_REPO)
-
-  - task: JfrogCliV2@1
     displayName: Poetry install via JFrog (collects dependencies for build-info)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
