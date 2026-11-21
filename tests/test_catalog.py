@@ -43,3 +43,17 @@ def test_search_and_stats(tmp_path, capsys):
     main(["generate", "-n", "10", "--seed", "2", "-o", str(out)])
     assert main(["stats", "-f", str(out)]) == 0
     assert "CATEGORY" in capsys.readouterr().out
+
+
+def test_discount():
+    import pytest
+
+    from toy_catalog.discounts import apply_discount
+
+    products = [{"id": 1, "name": "A", "price": 10.0, "category": "car"},
+                {"id": 2, "name": "B", "price": 20.0, "category": "truck"}]
+    assert apply_discount(products, 50)[0]["price"] == 5.0
+    sale = apply_discount(products, 50, "truck")
+    assert sale[0]["price"] == 10.0 and sale[1]["price"] == 10.0
+    with pytest.raises(ValueError):
+        apply_discount(products, 150)

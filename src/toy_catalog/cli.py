@@ -6,6 +6,7 @@ import argparse
 
 from .catalog import filter_by_category, format_catalog, load_products
 from .generator import generate_products, save_products
+from .discounts import apply_discount
 from .stats import category_summary, format_summary, search
 
 DEFAULT_FILE = "products.json"
@@ -31,12 +32,19 @@ def main(argv: list[str] | None = None) -> int:
     stats = sub.add_parser("stats", help="per-category price summary")
     stats.add_argument("-f", "--file", default=DEFAULT_FILE)
 
+    sale = sub.add_parser("sale", help="show the catalog with a discount applied")
+    sale.add_argument("percent", type=float)
+    sale.add_argument("-f", "--file", default=DEFAULT_FILE)
+    sale.add_argument("-c", "--category")
+
     args = parser.parse_args(argv)
     if args.command == "generate":
         path = save_products(generate_products(args.count, args.seed), args.output)
         print(f"Wrote {args.count} products to {path}")
     elif args.command == "search":
         print(format_catalog(search(load_products(args.file), args.term)))
+    elif args.command == "sale":
+        print(format_catalog(apply_discount(load_products(args.file), args.percent, args.category)))
     elif args.command == "stats":
         print(format_summary(category_summary(load_products(args.file))))
     else:
