@@ -1,6 +1,13 @@
 # Build toy-catalog with Poetry, authenticate to JFrog via OIDC (JFrog Platform service
 # connection configured with an OIDC provider - no stored tokens), publish to the
 # alpha-pypi-virtual repo and push build-info with JFrog CLI.
+#
+# Two ways to get the OIDC token and resolve Poetry dependencies:
+#   Option 1 (commented out below): curl + REST. Fetch the ADO ID token and exchange it at JFrog
+#            with curl, then run plain `poetry install` with credentials from env variables.
+#   Option 2 (ACTIVE): JFrog CLI everywhere. The JfrogCliV2 task runs `jf eot` for the OIDC exchange,
+#            then `jf poetry-config` and `jf poetry install` resolve through alpha-pypi-virtual
+#            and record dependencies in build-info.
 trigger:
   branches:
     include: [main]
@@ -10,12 +17,13 @@ pool:
 
 variables:
   JFROG_CONNECTION: mpate-solenglatest-platform   # JFrog Platform service connection (OIDC provider soleng-ado-mp)
-  JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
-  JFROG_OIDC_PROVIDER: soleng-ado-mp
-  JFROG_URL: https://solenglatest.jfrog.io
   PYPI_REPO: alpha-pypi-virtual
   BUILD_NAME: toy-catalog
   BUILD_NUMBER: $(Build.BuildId)
+  # --- Option 1 only (curl) ---
+  # JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
+  # JFROG_OIDC_PROVIDER: soleng-ado-mp
+  # JFROG_URL: https://solenglatest.jfrog.io
 
 steps:
   - checkout: self
@@ -28,34 +36,69 @@ steps:
   - bash: python -m pip install --upgrade pip poetry && poetry --version
     displayName: Install Poetry
 
-  # OIDC for Poetry: request the Azure DevOps ID token of the JFrog service connection and exchange
-  # it at JFrog (provider soleng-ado-mp) for a short-lived access token. Nothing is stored.
-  # (jf poetry is not used for resolution: it rewrites the source URL without /simple.)
-  - bash: |
-      set -euo pipefail
-      ID_TOKEN=$(curl -sf -X POST -d "" -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
-        "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" \
-        | python3 -c 'import sys,json;print(json.load(sys.stdin)["oidcToken"])')
-      echo "##vso[task.setvariable variable=ADO_ID_TOKEN;issecret=true]$ID_TOKEN"
-      RESP=$(curl -sf -X POST "$(JFROG_URL)/access/api/v1/oidc/token" -H "Content-Type: application/json" \
-        -d "{\"grant_type\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"subject_token\":\"$ID_TOKEN\",\"provider_name\":\"$(JFROG_OIDC_PROVIDER)\",\"audience\":\"api://AzureADTokenExchange\"}")
-      TOKEN=$(python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' <<<"$RESP")
-      echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
-      # Artifactory basic auth needs the username to match the token subject (user part of 'sub').
-      TOKEN_USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);sub=json.loads(base64.urlsafe_b64decode(t))["sub"];print(sub.split("/users/")[-1])' "$TOKEN")
-      echo "Token subject user: $TOKEN_USER"
-      echo "##vso[task.setvariable variable=JFROG_TOKEN_USER]$TOKEN_USER"
-    displayName: JFrog OIDC token exchange for Poetry
-    env:
-      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+  # ===========================================================================================
+  # OPTION 1 - curl based OIDC (kept for reference, currently disabled)
+  # -------------------------------------------------------------------------------------------
+  # Notes:
+  #  * Requests the Azure DevOps ID token for the JFrog service connection from
+  #    System.OidcRequestUri, then exchanges it at JFrog (/access/api/v1/oidc/token,
+  #    provider soleng-ado-mp) for a short-lived access token. Nothing is stored.
+  #  * Artifactory Basic auth needs the username to match the token subject, so the user part of
+  #    the JWT 'sub' claim is used as the Poetry username.
+  #  * Plain `poetry install` is used because `jf poetry` writes the source URL without /simple
+  #    (see Option 2 for the workaround). Poetry gets credentials from POETRY_HTTP_BASIC_* env vars,
+  #    and the source with /simple comes from pyproject.toml.
+  #  * To use Option 1: uncomment the two steps below, delete the Option 2 "Poetry install via jf"
+  #    step, and uncomment the Option 1 variables above.
+  #
+  # - bash: |
+  #     set -euo pipefail
+  #     ID_TOKEN=$(curl -sf -X POST -d "" -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
+  #       "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" \
+  #       | python3 -c 'import sys,json;print(json.load(sys.stdin)["oidcToken"])')
+  #     echo "##vso[task.setvariable variable=ADO_ID_TOKEN;issecret=true]$ID_TOKEN"
+  #     RESP=$(curl -sf -X POST "$(JFROG_URL)/access/api/v1/oidc/token" -H "Content-Type: application/json" \
+  #       -d "{\"grant_type\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"subject_token\":\"$ID_TOKEN\",\"provider_name\":\"$(JFROG_OIDC_PROVIDER)\",\"audience\":\"api://AzureADTokenExchange\"}")
+  #     TOKEN=$(python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' <<<"$RESP")
+  #     echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+  #     # Artifactory basic auth needs the username to match the token subject (user part of 'sub').
+  #     TOKEN_USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);sub=json.loads(base64.urlsafe_b64decode(t))["sub"];print(sub.split("/users/")[-1])' "$TOKEN")
+  #     echo "Token subject user: $TOKEN_USER"
+  #     echo "##vso[task.setvariable variable=JFROG_TOKEN_USER]$TOKEN_USER"
+  #   displayName: "[Option 1] JFrog OIDC token exchange for Poetry (curl)"
+  #   env:
+  #     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+  #
+  # - bash: |
+  #     set -euo pipefail
+  #     poetry install --no-interaction
+  #   displayName: "[Option 1] Poetry install (resolves from $(PYPI_REPO))"
+  #   env:
+  #     POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
+  #     POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
+  # ===========================================================================================
 
-  - bash: |
-      set -euo pipefail
-      poetry install --no-interaction
-    displayName: Poetry install (resolves from $(PYPI_REPO))
-    env:
-      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
-      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
+  # ===========================================================================================
+  # OPTION 2 - JFrog CLI everywhere (ACTIVE)
+  # -------------------------------------------------------------------------------------------
+  # Notes:
+  #  * The JfrogCliV2 task runs `jf eot` (OIDC token exchange via provider soleng-ado-mp) and
+  #    registers a temporary server config; it is removed when the step ends, so every jf command
+  #    that needs auth runs inside a JfrogCliV2 step. Multiple commands are allowed per step.
+  #  * `jf poetry-config` + `jf poetry install` route resolution through the virtual repo and add
+  #    the dependencies to build-info (--build-name/--build-number/--module).
+  #  * Workaround: `jf poetry` builds the source URL as <artifactory>/api/pypi/<repo> and Artifactory
+  #    only serves the Poetry index under .../simple, so the repo is passed as "<repo>/simple".
+  #    Without it resolution fails ("pytest ... doesn't match any versions", HTTP 404).
+  #  * jf rewrites the [[tool.poetry.source]] block and poetry.lock in the CI workspace only.
+  # ===========================================================================================
+  - task: JfrogCliV2@1
+    displayName: "[Option 2] jf OIDC login, poetry-config and poetry install"
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: |
+        jf poetry-config --repo-resolve=$(PYPI_REPO)/simple
+        jf poetry install --no-interaction --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER) --module=toy-catalog
 
   - bash: |
       set -euo pipefail
@@ -71,19 +114,10 @@ steps:
       command: jf rt upload "dist/*" $(PYPI_REPO)/ --module=toy-catalog --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER)
 
   - task: JfrogCliV2@1
-    displayName: Collect environment variables
+    displayName: Collect build-info and publish
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
-
-  - task: JfrogCliV2@1
-    displayName: Collect git info
-    inputs:
-      jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
-
-  - task: JfrogCliV2@1
-    displayName: Publish build-info
-    inputs:
-      jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
+      command: |
+        jf rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
+        jf rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
+        jf rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
