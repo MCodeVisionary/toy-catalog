@@ -20,6 +20,8 @@ variables:
   PYPI_REPO: alpha-pypi-virtual
   BUILD_NAME: toy-catalog
   BUILD_NUMBER: $(Build.BuildId)
+  # Fixed Poetry cache location (Poetry reads POETRY_CACHE_DIR) so downloaded wheels can be recorded as build-info dependencies.
+  POETRY_CACHE_DIR: $(Pipeline.Workspace)/.poetry-cache
   # --- Option 1 only (curl) ---
   # JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
   # JFROG_OIDC_PROVIDER: soleng-ado-mp
@@ -112,6 +114,15 @@ steps:
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
       command: jf rt upload "dist/*" $(PYPI_REPO)/ --module=toy-catalog --build-name=$(BUILD_NAME) --build-number=$(BUILD_NUMBER)
+
+  # `jf poetry install` does not collect dependencies into build-info (it only handles resolution),
+  # so the wheels Poetry downloaded into its cache are attached as build dependencies with their
+  # checksums; Artifactory links them to the cached files in alpha-pypi-remote-cache.
+  - task: JfrogCliV2@1
+    displayName: Add Poetry dependencies to build-info
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: jf rt build-add-dependencies $(BUILD_NAME) $(BUILD_NUMBER) "$(POETRY_CACHE_DIR)/artifacts/*/*/*/*/*.whl" --module=toy-catalog
 
   - task: JfrogCliV2@1
     displayName: Collect build-info and publish
