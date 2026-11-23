@@ -132,3 +132,12 @@ steps:
         jf rt build-collect-env $(BUILD_NAME) $(BUILD_NUMBER)
         jf rt build-add-git $(BUILD_NAME) $(BUILD_NUMBER)
         jf rt build-publish $(BUILD_NAME) $(BUILD_NUMBER)
+
+  # Xray build scan of the published build-info (needs Xray on the platform and indexed build).
+  # --vuln lists vulnerabilities even without a watch/policy; --fail=false keeps the pipeline green.
+  # Set --fail=true together with --watches=<watch> (or --project/--repo-path) to gate the build.
+  - task: JfrogCliV2@1
+    displayName: Xray build scan
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: jf build-scan $(BUILD_NAME) $(BUILD_NUMBER) --vuln --fail=false

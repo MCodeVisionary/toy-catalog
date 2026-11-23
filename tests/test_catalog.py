@@ -57,3 +57,12 @@ def test_discount():
     assert sale[0]["price"] == 10.0 and sale[1]["price"] == 10.0
     with pytest.raises(ValueError):
         apply_discount(products, 150)
+
+
+def test_inventory():
+    from toy_catalog.inventory import add_stock, low_stock
+
+    stocked = add_stock(generate_products(20, seed=1), seed=2)
+    assert all(0 <= p["stock"] <= 50 for p in stocked)
+    assert all(p["stock"] <= 5 for p in low_stock(stocked))
+    assert add_stock(generate_products(3, seed=1), seed=9) == add_stock(generate_products(3, seed=1), seed=9)
