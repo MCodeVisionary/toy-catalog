@@ -7,6 +7,7 @@ import argparse
 from .catalog import filter_by_category, format_catalog, load_products
 from .generator import generate_products, save_products
 from .discounts import apply_discount
+from .manage import add_product, remove_product, update_price
 from .stats import category_summary, format_summary, search
 
 DEFAULT_FILE = "products.json"
@@ -37,12 +38,43 @@ def main(argv: list[str] | None = None) -> int:
     sale.add_argument("-f", "--file", default=DEFAULT_FILE)
     sale.add_argument("-c", "--category")
 
+    add = sub.add_parser("add", help="add a product to the catalog")
+    add.add_argument("name")
+    add.add_argument("price", type=float)
+    add.add_argument("category")
+    add.add_argument("-f", "--file", default=DEFAULT_FILE)
+
+    rm = sub.add_parser("remove", help="remove a product by id")
+    rm.add_argument("id", type=int)
+    rm.add_argument("-f", "--file", default=DEFAULT_FILE)
+
+    price = sub.add_parser("set-price", help="change a product's price")
+    price.add_argument("id", type=int)
+    price.add_argument("price", type=float)
+    price.add_argument("-f", "--file", default=DEFAULT_FILE)
+
     args = parser.parse_args(argv)
     if args.command == "generate":
         path = save_products(generate_products(args.count, args.seed), args.output)
         print(f"Wrote {args.count} products to {path}")
     elif args.command == "search":
         print(format_catalog(search(load_products(args.file), args.term)))
+    elif args.command in ("add", "remove", "set-price"):
+        try:
+            products = load_products(args.file)
+            if args.command == "add":
+                products = add_product(products, args.name, args.price, args.category)
+                print(f"Added #{products[-1]['id']} {products[-1]['name']}")
+            elif args.command == "remove":
+                products = remove_product(products, args.id)
+                print(f"Removed #{args.id}")
+            else:
+                products = update_price(products, args.id, args.price)
+                print(f"Updated #{args.id} price to ${args.price:.2f}")
+        except (ValueError, KeyError) as exc:
+            print(f"error: {exc.args[0]}")
+            return 1
+        save_products(products, args.file)
     elif args.command == "sale":
         print(format_catalog(apply_discount(load_products(args.file), args.percent, args.category)))
     elif args.command == "stats":

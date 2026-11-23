@@ -66,3 +66,29 @@ def test_inventory():
     assert all(0 <= p["stock"] <= 50 for p in stocked)
     assert all(p["stock"] <= 5 for p in low_stock(stocked))
     assert add_stock(generate_products(3, seed=1), seed=9) == add_stock(generate_products(3, seed=1), seed=9)
+
+
+def test_manage_products(tmp_path, capsys):
+    import pytest
+
+    from toy_catalog.manage import add_product, remove_product, update_price
+
+    products = generate_products(3, seed=1)
+    added = add_product(products, "Super Racer", 12.5, "CAR")
+    assert added[-1] == {"id": 4, "name": "Super Racer", "price": 12.5, "category": "car"}
+    assert len(products) == 3  # input not mutated
+    assert len(remove_product(added, 4)) == 3
+    assert update_price(added, 4, 9.99)[-1]["price"] == 9.99
+    with pytest.raises(ValueError):
+        add_product(products, "X", 5, "spaceship")
+    with pytest.raises(KeyError):
+        remove_product(products, 99)
+
+    out = tmp_path / "p.json"
+    main(["generate", "-n", "2", "--seed", "1", "-o", str(out)])
+    assert main(["add", "Mega Truck", "19.99", "truck", "-f", str(out)]) == 0
+    assert main(["set-price", "3", "5", "-f", str(out)]) == 0
+    assert main(["remove", "1", "-f", str(out)]) == 0
+    assert main(["remove", "99", "-f", str(out)]) == 1
+    main(["list", "-f", str(out)])
+    assert "Mega Truck" in capsys.readouterr().out
