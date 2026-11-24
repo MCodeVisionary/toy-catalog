@@ -1,0 +1,87 @@
+# Build toy-catalog with Poetry, authenticate to JFrog via OIDC (no stored tokens), publish to
+# alpha-pypi-virtual, record build-info (artifacts + dependencies) and run an Xray build scan.
+# Mirrors azure-pipelines.yml (Option 2: JFrog CLI everywhere).
+#
+# One-time JFrog setup (solenglatest.jfrog.io -> Administration -> Security -> OIDC Integrations):
+#   * provider name: toy-catalog-github, type GitHub, issuer https://token.actions.githubusercontent.com,
+#     provider URL/organization MCodeVisionary
+#   * identity mapping: claims {"repository": "MCodeVisionary/toy-catalog"} (add "ref" to limit to main)
+#     -> a user/group with read/deploy on alpha-pypi-virtual and build-info
+# Repository variable (Settings -> Secrets and variables -> Actions -> Variables):
+#   JF_URL = https://solenglatest.jfrog.io
+name: build
+
+on:
+  workflow_dispatch:
+  # Uncomment once the JFrog OIDC provider exists:
+  # push:
+  #   branches: [main]
+
+permissions:
+  id-token: write   # required to request the GitHub OIDC token
+  contents: read
+
+env:
+  JF_URL: ${{ vars.JF_URL || 'https://solenglatest.jfrog.io' }}
+  JFROG_OIDC_PROVIDER: toy-catalog-github
+  PYPI_REPO: alpha-pypi-virtual
+  BUILD_NAME: toy-catalog-github
+  BUILD_NUMBER: ${{ github.run_number }}
+  # Fixed Poetry cache so downloaded wheels can be recorded as build-info dependencies.
+  POETRY_CACHE_DIR: ${{ github.workspace }}/.poetry-cache
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for jf rt build-add-git
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: python -m pip install --upgrade pip poetry && poetry --version
+
+      # OIDC login: setup-jfrog-cli installs jf, exchanges the GitHub ID token for a short-lived
+      # JFrog access token and configures the server for the following steps.
+      - uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: ${{ env.JF_URL }}
+        with:
+          oidc-provider-name: ${{ env.JFROG_OIDC_PROVIDER }}
+
+      - name: jf ping
+        run: jf rt ping
+
+      # jf poetry builds the source URL without /simple, which Artifactory 404s on, so the repo is
+      # passed as "<repo>/simple".
+      - name: jf poetry-config and poetry install
+        run: |
+          jf poetry-config --repo-resolve=${PYPI_REPO}/simple
+          jf poetry install --no-interaction --build-name=${BUILD_NAME} --build-number=${BUILD_NUMBER} --module=toy-catalog
+
+      - name: Test and poetry build
+        run: |
+          poetry run pytest -q
+          poetry build
+          ls -l dist
+
+      - name: Publish to ${{ env.PYPI_REPO }}
+        run: jf rt upload "dist/*" ${PYPI_REPO}/ --module=toy-catalog --build-name=${BUILD_NAME} --build-number=${BUILD_NUMBER}
+
+      # jf poetry install does not collect dependencies, so attach the downloaded wheels.
+      - name: Add Poetry dependencies to build-info
+        run: jf rt build-add-dependencies ${BUILD_NAME} ${BUILD_NUMBER} "${POETRY_CACHE_DIR}/artifacts/*/*/*/*/*.whl" --module=toy-catalog
+
+      - name: Collect and publish build-info
+        run: |
+          jf rt build-collect-env ${BUILD_NAME} ${BUILD_NUMBER}
+          jf rt build-add-git ${BUILD_NAME} ${BUILD_NUMBER}
+          jf rt build-publish ${BUILD_NAME} ${BUILD_NUMBER}
+
+      # --fail=false keeps the job green; use --watches=<watch> --fail=true to gate on policy.
+      - name: Xray build scan
+        run: jf build-scan ${BUILD_NAME} ${BUILD_NUMBER} --vuln --fail=false
