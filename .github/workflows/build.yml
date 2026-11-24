@@ -29,8 +29,9 @@ env:
   JF_URL: https://solenglatest.jfrog.io
   JFROG_OIDC_PROVIDER: github-docportal
   PYPI_REPO: alpha-pypi-virtual
-  BUILD_NAME: toy-catalog-github
-  BUILD_NUMBER: ${{ github.run_number }}
+  # Same build name as the Azure pipeline (already indexed by Xray); gh- prefix keeps numbers distinct.
+  BUILD_NAME: toy-catalog
+  BUILD_NUMBER: gh-${{ github.run_number }}
   # Fixed Poetry cache so downloaded wheels can be recorded as build-info dependencies.
   POETRY_CACHE_DIR: ${{ github.workspace }}/.poetry-cache
 

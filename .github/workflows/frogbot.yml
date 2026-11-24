@@ -33,6 +33,29 @@ jobs:
       matrix:
         branch: ["main"]
     steps:
+      # Frogbot builds the Poetry dependency tree with `poetry install`, which needs poetry and
+      # credentials for the private alpha-pypi-virtual source (short-lived OIDC token, nothing stored).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install --upgrade pip poetry
+
+      - uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: https://solenglatest.jfrog.io
+        with:
+          version: 2.133.0
+          oidc-provider-name: github-docportal
+
+      - name: Poetry credentials for alpha-pypi-virtual
+        run: |
+          TOKEN=$(jf config export | base64 -d | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
+          echo "::add-mask::$TOKEN"
+          USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);print(json.loads(base64.urlsafe_b64decode(t))["sub"].split("/users/")[-1])' "$TOKEN")
+          echo "POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME=$USER" >> "$GITHUB_ENV"
+          echo "POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD=$TOKEN" >> "$GITHUB_ENV"
+
       - uses: jfrog/frogbot@v2
         env:
           # Hardcoded: an org-level JF_URL variable points at soleng.jfrog.io.
