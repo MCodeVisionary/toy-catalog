@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from .generator import CATEGORIES
 
 
@@ -9,7 +11,7 @@ def next_id(products: list[dict]) -> int:
     return max((p["id"] for p in products), default=0) + 1
 
 
-def add_product(products: list[dict], name: str, price: float, category: str) -> list[dict]:
+def add_product(products: list[dict], name: str, price: float, category: str, published: str | None = None) -> list[dict]:
     """Return a new list with the product appended (id auto-assigned)."""
     category = category.lower()
     if category not in CATEGORIES:
@@ -18,7 +20,12 @@ def add_product(products: list[dict], name: str, price: float, category: str) ->
         raise ValueError("price must be positive")
     if not name.strip():
         raise ValueError("name is required")
-    return [*products, {"id": next_id(products), "name": name.strip(), "price": round(price, 2), "category": category}]
+    published = published or date.today().isoformat()
+    date.fromisoformat(published)  # raises ValueError for a bad date
+    return [
+        *products,
+        {"id": next_id(products), "name": name.strip(), "price": round(price, 2), "category": category, "published": published},
+    ]
 
 
 def remove_product(products: list[dict], product_id: int) -> list[dict]:

@@ -7,7 +7,8 @@ def test_generate_shape():
     products = generate_products(20, seed=1)
     assert len(products) == 20
     for p in products:
-        assert set(p) == {"id", "name", "price", "category"}
+        assert set(p) == {"id", "name", "price", "category", "published"}
+        assert "2024-11-01" <= p["published"] <= "2026-11-01"
         assert p["category"] in CATEGORIES
         assert 4.99 <= p["price"] <= 79.99
 
@@ -74,8 +75,9 @@ def test_manage_products(tmp_path, capsys):
     from toy_catalog.manage import add_product, remove_product, update_price
 
     products = generate_products(3, seed=1)
-    added = add_product(products, "Super Racer", 12.5, "CAR")
-    assert added[-1] == {"id": 4, "name": "Super Racer", "price": 12.5, "category": "car"}
+    added = add_product(products, "Super Racer", 12.5, "CAR", "2026-05-01")
+    assert added[-1] == {"id": 4, "name": "Super Racer", "price": 12.5, "category": "car", "published": "2026-05-01"}
+    assert add_product(products, "Today Toy", 5, "car")[-1]["published"]
     assert len(products) == 3  # input not mutated
     assert len(remove_product(added, 4)) == 3
     assert update_price(added, 4, 9.99)[-1]["price"] == 9.99
@@ -113,3 +115,16 @@ def test_wishlist(tmp_path, capsys):
     assert main(["wish", "1", "-f", str(out), "-w", str(wlf)]) == 0
     assert main(["wish", "99", "-f", str(out), "-w", str(wlf)]) == 1
     assert "Wishlist: [1]" in capsys.readouterr().out
+
+
+def test_published_since(tmp_path, capsys):
+    from toy_catalog.catalog import published_since
+
+    products = [{"id": 1, "name": "Old", "price": 1.0, "category": "car", "published": "2025-01-01"},
+                {"id": 2, "name": "New", "price": 2.0, "category": "car", "published": "2026-06-01"},
+                {"id": 3, "name": "Legacy", "price": 3.0, "category": "car"}]
+    assert [p["id"] for p in published_since(products, "2026-01-01")] == [2]
+    out = tmp_path / "p.json"
+    main(["generate", "-n", "10", "--seed", "4", "-o", str(out)])
+    assert main(["list", "-f", str(out), "--since", "2026-01-01"]) == 0
+    assert "PUBLISHED" in capsys.readouterr().out

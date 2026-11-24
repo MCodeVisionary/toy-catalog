@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+from datetime import date, timedelta
 from pathlib import Path
 
 CATEGORIES = {
@@ -13,6 +14,8 @@ CATEGORIES = {
     "train": ["Steam Engine", "Express", "Freight Train"],
     "robot": ["Bot", "Mech", "Droid"],
 }
+# Fixed anchor so seeded output stays deterministic regardless of today's date.
+PUBLISH_ANCHOR = date(2026, 11, 1)
 ADJECTIVES = ["Turbo", "Mighty", "Tiny", "Super", "Rapid", "Classic", "Mega", "Shiny"]
 
 
@@ -29,6 +32,7 @@ def generate_products(count: int = 10, seed: int | None = None) -> list[dict]:
                 "name": name,
                 "price": round(rng.uniform(4.99, 79.99), 2),
                 "category": category,
+                "published": (PUBLISH_ANCHOR - timedelta(days=rng.randint(0, 730))).isoformat(),
             }
         )
     return products

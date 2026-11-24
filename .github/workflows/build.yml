@@ -77,10 +77,13 @@ jobs:
       - name: Curation audit
         run: jf curation-audit --format=table
 
-      # Xray + JFrog Advanced Security (SCA, secrets, IaC, SAST) on the source and dependencies.
+      # Xray + JFrog Advanced Security on the source and dependencies. --sca runs SCA *and* Contextual
+      # Analysis (is the vulnerable code actually reachable/applicable); secrets, IaC and SAST are added
+      # explicitly. (jf build-scan below only fetches Xray's verdict on the published build; it has no
+      # contextual analysis option, so it is covered here.)
       # --fail=false keeps the job green; add --watches=<watch> --fail=true to gate on policy.
-      - name: jf audit
-        run: jf audit --vuln --licenses --fail=false
+      - name: jf audit (SCA + Contextual Analysis + Advanced Security)
+        run: jf audit --sca --secrets --iac --sast --vuln --licenses --fail=false
 
       # jf poetry builds the source URL without /simple, which Artifactory 404s on, so the repo is
       # passed as "<repo>/simple".

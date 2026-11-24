@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from .catalog import filter_by_category, format_catalog, load_products
+from .catalog import filter_by_category, format_catalog, load_products, published_since
 from .generator import generate_products, save_products
 from .discounts import apply_discount
 from .manage import add_product, remove_product, update_price
@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     lst = sub.add_parser("list", help="show the catalog")
     lst.add_argument("-f", "--file", default=DEFAULT_FILE)
     lst.add_argument("-c", "--category")
+    lst.add_argument("--since", help="only products published on/after this date (YYYY-MM-DD)")
 
     srch = sub.add_parser("search", help="search products by name")
     srch.add_argument("term")
@@ -43,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     add.add_argument("name")
     add.add_argument("price", type=float)
     add.add_argument("category")
+    add.add_argument("--published", help="publish date YYYY-MM-DD (default: today)")
     add.add_argument("-f", "--file", default=DEFAULT_FILE)
 
     rm = sub.add_parser("remove", help="remove a product by id")
@@ -69,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             products = load_products(args.file)
             if args.command == "add":
-                products = add_product(products, args.name, args.price, args.category)
+                products = add_product(products, args.name, args.price, args.category, args.published)
                 print(f"Added #{products[-1]['id']} {products[-1]['name']}")
             elif args.command == "remove":
                 products = remove_product(products, args.id)
@@ -95,7 +97,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "stats":
         print(format_summary(category_summary(load_products(args.file))))
     else:
-        print(format_catalog(filter_by_category(load_products(args.file), args.category)))
+        products = filter_by_category(load_products(args.file), args.category)
+        if args.since:
+            products = published_since(products, args.since)
+        print(format_catalog(products))
     return 0
 
 

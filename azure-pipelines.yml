@@ -127,12 +127,15 @@ steps:
       POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
       POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
 
+  # --sca runs SCA *and* Contextual Analysis (is the vulnerable code actually reachable/applicable);
+  # secrets, IaC and SAST are added explicitly. (jf build-scan at the end only fetches Xray's verdict on
+  # the published build and has no contextual analysis option, so it is covered here.)
   # --fail=false keeps the pipeline green; add --watches=<watch> --fail=true to gate on policy.
   - task: JfrogCliV2@1
-    displayName: jf audit (Xray + Advanced Security)
+    displayName: jf audit (SCA + Contextual Analysis + Advanced Security)
     inputs:
       jfrogPlatformConnection: $(JFROG_CONNECTION)
-      command: jf audit --vuln --licenses --fail=false
+      command: jf audit --sca --secrets --iac --sast --vuln --licenses --fail=false
     env:
       POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
       POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)

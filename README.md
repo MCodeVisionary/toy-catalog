@@ -7,6 +7,7 @@ poetry install
 poetry run toy-catalog generate -n 12 --seed 42
 poetry run toy-catalog list
 poetry run toy-catalog list -c truck
+poetry run toy-catalog list --since 2026-01-01
 poetry run toy-catalog search turbo
 poetry run toy-catalog stats
 poetry run toy-catalog sale 25 -c car
