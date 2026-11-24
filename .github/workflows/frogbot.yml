@@ -35,7 +35,8 @@ jobs:
     steps:
       - uses: jfrog/frogbot@v2
         env:
-          JF_URL: ${{ vars.JF_URL || 'https://solenglatest.jfrog.io' }}
+          # Hardcoded: an org-level JF_URL variable points at soleng.jfrog.io.
+          JF_URL: https://solenglatest.jfrog.io
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JF_GIT_BASE_BRANCH: ${{ matrix.branch }}
         with:

@@ -13,7 +13,6 @@
 #    pull_request_target runs, so the same mapping covers Frogbot PR scans.)
 #   token: username maharship, scope applied-permissions/user, audience *@*, expires_in 1800
 # (JFrog: Administration -> Security -> OIDC Integrations -> github-docportal -> Identity Mappings).
-# Repository variable (optional, defaults below): JF_URL = https://solenglatest.jfrog.io
 name: build
 
 on:
@@ -26,7 +25,8 @@ permissions:
   contents: read
 
 env:
-  JF_URL: ${{ vars.JF_URL || 'https://solenglatest.jfrog.io' }}
+  # Hardcoded: an org-level JF_URL variable points at soleng.jfrog.io and would override a default.
+  JF_URL: https://solenglatest.jfrog.io
   JFROG_OIDC_PROVIDER: github-docportal
   PYPI_REPO: alpha-pypi-virtual
   BUILD_NAME: toy-catalog-github
@@ -55,6 +55,7 @@ jobs:
         env:
           JF_URL: ${{ env.JF_URL }}
         with:
+          version: 2.133.0
           oidc-provider-name: ${{ env.JFROG_OIDC_PROVIDER }}
 
       - name: jf ping
