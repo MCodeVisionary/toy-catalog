@@ -1,12 +1,17 @@
-# JFrog Frogbot: Xray-based security scanning.
-#   * Pull requests  -> scan-pull-request (comments on the PR with new vulnerabilities)
-#   * main / schedule / manual -> scan-repository (opens fix PRs for vulnerable dependencies)
-# Modelled on MCodeVisionary/node-goat. Authenticates with JFrog OIDC (provider github-docportal),
-# so it needs the toy-catalog identity mapping described in build.yml; no stored tokens.
+# JFrog Frogbot v3: Xray-based security scanning.
+#   * Pull requests            -> scan-pull-request (comments on the PR with new vulnerabilities)
+#   * push to main / daily / manual -> scan-repository (all issues, plus fix PRs for vulnerable dependencies)
+# v3 uses a static SCA engine: no package manager or build is needed, so no Poetry install or
+# credentials are required (v2 needed both). Results are uploaded as SBOMs to the JFrog Platform.
+# Authenticates with JFrog OIDC (provider github-docportal, mapping "toy-catalog"): no stored tokens.
+#
+# Scanners (SCA, Contextual Analysis, IaC, Secrets, SAST) are enabled on the platform, not here:
+#   Administration -> Xray Settings -> Indexed Resources -> Git Repositories -> Frogbot Configuration.
+# Platform prerequisites: Xray 3.143.6+, a Generic local repo named "frogbot" (Deploy granted), and a token
+# user with Xray Admin + Catalog Admin (Frogbot 3.7+ / Xray 3.155+).
 #
 # The repo is PUBLIC and pull_request_target runs with a privileged token, so the job uses the
-# "frogbot" environment: add required reviewers to it (Settings -> Environments -> frogbot) so PRs
-# from forks are only scanned after a maintainer approves them.
+# "frogbot" environment: add required reviewers to it (Settings -> Environments -> frogbot).
 name: "Frogbot Security Scan"
 
 on:
@@ -19,48 +24,22 @@ on:
     - cron: "0 0 * * *"
 
 permissions:
-  actions: read          # detect the GitHub Actions environment
-  id-token: write        # OIDC token for JFrog
+  contents: write        # fix PR branches (scan-repository)
+  pull-requests: write   # PR comments / fix PRs
   security-events: write # upload code scanning results
-  pull-requests: write   # PR comments
-  contents: write        # fix PR branches
+  id-token: write        # OIDC token for JFrog
+  actions: read
 
 jobs:
   frogbot-scan:
     runs-on: ubuntu-latest
     environment: frogbot
-    strategy:
-      matrix:
-        branch: ["main"]
     steps:
-      # Frogbot builds the Poetry dependency tree with `poetry install`, which needs poetry and
-      # credentials for the private alpha-pypi-virtual source (short-lived OIDC token, nothing stored).
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: python -m pip install --upgrade pip poetry
-
-      - uses: jfrog/setup-jfrog-cli@v4
-        env:
-          JF_URL: https://solenglatest.jfrog.io
-        with:
-          version: 2.133.0
-          oidc-provider-name: github-docportal
-
-      - name: Poetry credentials for alpha-pypi-virtual
-        run: |
-          TOKEN=$(jf config export | base64 -d | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
-          echo "::add-mask::$TOKEN"
-          USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);print(json.loads(base64.urlsafe_b64decode(t))["sub"].split("/users/")[-1])' "$TOKEN")
-          echo "POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME=$USER" >> "$GITHUB_ENV"
-          echo "POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD=$TOKEN" >> "$GITHUB_ENV"
-
-      - uses: jfrog/frogbot@v2
+      - uses: jfrog/frogbot@v3
         env:
           # Hardcoded: an org-level JF_URL variable points at soleng.jfrog.io.
           JF_URL: https://solenglatest.jfrog.io
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JF_GIT_BASE_BRANCH: ${{ matrix.branch }}
+          JF_GIT_BASE_BRANCH: ${{ github.event.repository.default_branch }}
         with:
           oidc-provider-name: github-docportal
