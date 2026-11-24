@@ -13,11 +13,10 @@ on:
   pull_request_target:
     types: [opened, synchronize]
   workflow_dispatch:
-  # Enable once the JFrog OIDC identity mapping exists:
-  # push:
-  #   branches: [main]
-  # schedule:
-  #   - cron: "0 0 * * *"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
 
 permissions:
   actions: read          # detect the GitHub Actions environment

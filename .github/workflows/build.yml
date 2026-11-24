@@ -18,9 +18,8 @@ name: build
 
 on:
   workflow_dispatch:
-  # Uncomment once the JFrog OIDC provider exists:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   id-token: write   # required to request the GitHub OIDC token
