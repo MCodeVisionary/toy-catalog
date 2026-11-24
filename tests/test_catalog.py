@@ -92,3 +92,24 @@ def test_manage_products(tmp_path, capsys):
     assert main(["remove", "99", "-f", str(out)]) == 1
     main(["list", "-f", str(out)])
     assert "Mega Truck" in capsys.readouterr().out
+
+
+def test_wishlist(tmp_path, capsys):
+    import pytest
+
+    from toy_catalog.wishlist import add_to_wishlist, wishlist_total
+
+    products = [{"id": 1, "name": "A", "price": 10.0, "category": "car"},
+                {"id": 2, "name": "B", "price": 5.5, "category": "truck"}]
+    wl = add_to_wishlist([], 1, products)
+    wl = add_to_wishlist(wl, 2, products)
+    assert add_to_wishlist(wl, 2, products) == [1, 2]  # no duplicates
+    assert wishlist_total(wl, products) == 15.5
+    with pytest.raises(KeyError):
+        add_to_wishlist(wl, 9, products)
+
+    out, wlf = tmp_path / "p.json", tmp_path / "w.json"
+    main(["generate", "-n", "3", "--seed", "1", "-o", str(out)])
+    assert main(["wish", "1", "-f", str(out), "-w", str(wlf)]) == 0
+    assert main(["wish", "99", "-f", str(out), "-w", str(wlf)]) == 1
+    assert "Wishlist: [1]" in capsys.readouterr().out

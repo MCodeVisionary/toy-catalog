@@ -8,6 +8,7 @@ from .catalog import filter_by_category, format_catalog, load_products
 from .generator import generate_products, save_products
 from .discounts import apply_discount
 from .manage import add_product, remove_product, update_price
+from .wishlist import add_to_wishlist, load_wishlist, save_wishlist, wishlist_total
 from .stats import category_summary, format_summary, search
 
 DEFAULT_FILE = "products.json"
@@ -53,6 +54,11 @@ def main(argv: list[str] | None = None) -> int:
     price.add_argument("price", type=float)
     price.add_argument("-f", "--file", default=DEFAULT_FILE)
 
+    wish = sub.add_parser("wish", help="add a product to your wishlist and show the total")
+    wish.add_argument("id", type=int)
+    wish.add_argument("-f", "--file", default=DEFAULT_FILE)
+    wish.add_argument("-w", "--wishlist", default="wishlist.json")
+
     args = parser.parse_args(argv)
     if args.command == "generate":
         path = save_products(generate_products(args.count, args.seed), args.output)
@@ -75,6 +81,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc.args[0]}")
             return 1
         save_products(products, args.file)
+    elif args.command == "wish":
+        products = load_products(args.file)
+        try:
+            wishlist = add_to_wishlist(load_wishlist(args.wishlist), args.id, products)
+        except KeyError as exc:
+            print(f"error: {exc.args[0]}")
+            return 1
+        save_wishlist(wishlist, args.wishlist)
+        print(f"Wishlist: {wishlist} (total ${wishlist_total(wishlist, products):.2f})")
     elif args.command == "sale":
         print(format_catalog(apply_discount(load_products(args.file), args.percent, args.category)))
     elif args.command == "stats":

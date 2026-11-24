@@ -13,6 +13,7 @@ poetry run toy-catalog sale 25 -c car
 poetry run toy-catalog add "Turbo Racer" 14.99 car
 poetry run toy-catalog set-price 1 9.99
 poetry run toy-catalog remove 2
+poetry run toy-catalog wish 1
 poetry run pytest
 ```
 
