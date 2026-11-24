@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "toy-catalog"
-version = "0.5.1"
+version = "0.5.2"
 description = "Sample toy product catalog generated from random JSON data"
 authors = ["Maharshi Patel <maharship@jfrog.com>"]
 readme = "README.md"

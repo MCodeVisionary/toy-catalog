@@ -22,10 +22,10 @@ variables:
   BUILD_NUMBER: $(Build.BuildId)
   # Fixed Poetry cache location (Poetry reads POETRY_CACHE_DIR) so downloaded wheels can be recorded as build-info dependencies.
   POETRY_CACHE_DIR: $(Pipeline.Workspace)/.poetry-cache
-  # --- Option 1 only (curl) ---
-  # JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
-  # JFROG_OIDC_PROVIDER: soleng-ado-mp
-  # JFROG_URL: https://solenglatest.jfrog.io
+  # Used by the curl OIDC exchange (Option 1 and the audit-credentials step below)
+  JFROG_CONNECTION_ID: bbe7670a-8377-4b52-b55c-638d8c6c1f55
+  JFROG_OIDC_PROVIDER: soleng-ado-mp
+  JFROG_URL: https://solenglatest.jfrog.io
 
 steps:
   - checkout: self
@@ -94,6 +94,49 @@ steps:
   #    Without it resolution fails ("pytest ... doesn't match any versions", HTTP 404).
   #  * jf rewrites the [[tool.poetry.source]] block and poetry.lock in the CI workspace only.
   # ===========================================================================================
+  # ===========================================================================================
+  # Curation audit + jf audit (run BEFORE jf poetry install, which rewrites the pyproject.toml source)
+  # -------------------------------------------------------------------------------------------
+  #  * jf audit builds the Poetry dependency tree with plain `poetry`, which needs credentials for the
+  #    private alpha-pypi-virtual source. The JfrogCliV2 task drops its server config after each step,
+  #    so a short-lived token is obtained once with the same OIDC exchange as Option 1 and handed to
+  #    the audit steps as POETRY_HTTP_BASIC_* env vars (masked, never stored).
+  # ===========================================================================================
+  - bash: |
+      set -euo pipefail
+      ID_TOKEN=$(curl -sf -X POST -d "" -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" -H "Content-Type: application/json" \
+        "$(System.OidcRequestUri)?api-version=7.1&serviceConnectionId=$(JFROG_CONNECTION_ID)" \
+        | python3 -c 'import sys,json;print(json.load(sys.stdin)["oidcToken"])')
+      echo "##vso[task.setvariable variable=ADO_ID_TOKEN;issecret=true]$ID_TOKEN"
+      RESP=$(curl -sf -X POST "$(JFROG_URL)/access/api/v1/oidc/token" -H "Content-Type: application/json" \
+        -d "{\"grant_type\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\",\"subject_token\":\"$ID_TOKEN\",\"provider_name\":\"$(JFROG_OIDC_PROVIDER)\",\"audience\":\"api://AzureADTokenExchange\"}")
+      TOKEN=$(python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' <<<"$RESP")
+      echo "##vso[task.setvariable variable=JFROG_ACCESS_TOKEN;issecret=true]$TOKEN"
+      TOKEN_USER=$(python3 -c 'import sys,json,base64;t=sys.argv[1].split(".")[1];t+="="*(-len(t)%4);sub=json.loads(base64.urlsafe_b64decode(t))["sub"];print(sub.split("/users/")[-1])' "$TOKEN")
+      echo "##vso[task.setvariable variable=JFROG_TOKEN_USER]$TOKEN_USER"
+    displayName: OIDC token for Poetry-based audits (curl)
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - task: JfrogCliV2@1
+    displayName: Curation audit
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: jf curation-audit --format=table
+    env:
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
+
+  # --fail=false keeps the pipeline green; add --watches=<watch> --fail=true to gate on policy.
+  - task: JfrogCliV2@1
+    displayName: jf audit (Xray + Advanced Security)
+    inputs:
+      jfrogPlatformConnection: $(JFROG_CONNECTION)
+      command: jf audit --vuln --licenses --fail=false
+    env:
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_USERNAME: $(JFROG_TOKEN_USER)
+      POETRY_HTTP_BASIC_ALPHA_PYPI_VIRTUAL_PASSWORD: $(JFROG_ACCESS_TOKEN)
+
   - task: JfrogCliV2@1
     displayName: "[Option 2] jf OIDC login, poetry-config and poetry install"
     inputs:
