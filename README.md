@@ -24,6 +24,6 @@ poetry config http-basic.alpha-pypi-virtual <user> <token>
 ```
 
 ## CI/CD
-`.github/workflows/build.yml` is the GitHub Actions equivalent (OIDC provider `toy-catalog-github`).
+`.github/workflows/build.yml` is the GitHub Actions equivalent (OIDC provider `github-docportal`, same as node-goat).
 
 `azure-pipelines.yml` builds with Poetry using JFrog OIDC (no stored tokens), collects build-info with JFrog CLI and publishes to `alpha-pypi-virtual`. See `docs/azure-devops-setup.md`.

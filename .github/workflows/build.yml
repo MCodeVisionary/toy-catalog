@@ -2,13 +2,13 @@
 # alpha-pypi-virtual, record build-info (artifacts + dependencies) and run an Xray build scan.
 # Mirrors azure-pipelines.yml (Option 2: JFrog CLI everywhere).
 #
-# One-time JFrog setup (solenglatest.jfrog.io -> Administration -> Security -> OIDC Integrations):
-#   * provider name: toy-catalog-github, type GitHub, issuer https://token.actions.githubusercontent.com,
-#     provider URL/organization MCodeVisionary
-#   * identity mapping: claims {"repository": "MCodeVisionary/toy-catalog"} (add "ref" to limit to main)
-#     -> a user/group with read/deploy on alpha-pypi-virtual and build-info
-# Repository variable (Settings -> Secrets and variables -> Actions -> Variables):
-#   JF_URL = https://solenglatest.jfrog.io
+# OIDC: same setup as MCodeVisionary/node-goat. It reuses the JFrog OIDC provider "github-docportal"
+# (type GitHub, issuer token.actions.githubusercontent.com, token issuer MCodeVisionary).
+# One-time step: add an identity mapping to that provider for this repo, for example
+#   name: toy-catalog, priority: 2, claims: {"repository": "MCodeVisionary/toy-catalog"}
+#   token: username maharship, scope applied-permissions/user, audience *@*, expires_in 1800
+# (JFrog: Administration -> Security -> OIDC Integrations -> github-docportal -> Identity Mappings).
+# Repository variable (optional, defaults below): JF_URL = https://solenglatest.jfrog.io
 name: build
 
 on:
@@ -23,7 +23,7 @@ permissions:
 
 env:
   JF_URL: ${{ vars.JF_URL || 'https://solenglatest.jfrog.io' }}
-  JFROG_OIDC_PROVIDER: toy-catalog-github
+  JFROG_OIDC_PROVIDER: github-docportal
   PYPI_REPO: alpha-pypi-virtual
   BUILD_NAME: toy-catalog-github
   BUILD_NUMBER: ${{ github.run_number }}
