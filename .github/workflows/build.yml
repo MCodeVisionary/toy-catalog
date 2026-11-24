@@ -5,7 +5,12 @@
 # OIDC: same setup as MCodeVisionary/node-goat. It reuses the JFrog OIDC provider "github-docportal"
 # (type GitHub, issuer token.actions.githubusercontent.com, token issuer MCodeVisionary).
 # One-time step: add an identity mapping to that provider for this repo, for example
-#   name: toy-catalog, priority: 2, claims: {"repository": "MCodeVisionary/toy-catalog"}
+#   name: toy-catalog, priority: 2,
+#   claims: {"repository": "MCodeVisionary/toy-catalog", "ref": "refs/heads/main"}
+#   (verified with the oidc-claims workflow. Match on "repository", not "sub": GitHub now issues
+#    sub as repo:MCodeVisionary@229987136/toy-catalog@1465971991:ref:refs/heads/main, and it also
+#    changes when an environment such as "frogbot" is used. "ref" stays refs/heads/main for
+#    pull_request_target runs, so the same mapping covers Frogbot PR scans.)
 #   token: username maharship, scope applied-permissions/user, audience *@*, expires_in 1800
 # (JFrog: Administration -> Security -> OIDC Integrations -> github-docportal -> Identity Mappings).
 # Repository variable (optional, defaults below): JF_URL = https://solenglatest.jfrog.io

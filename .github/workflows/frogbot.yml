@@ -1,0 +1,43 @@
+# JFrog Frogbot: Xray-based security scanning.
+#   * Pull requests  -> scan-pull-request (comments on the PR with new vulnerabilities)
+#   * main / schedule / manual -> scan-repository (opens fix PRs for vulnerable dependencies)
+# Modelled on MCodeVisionary/node-goat. Authenticates with JFrog OIDC (provider github-docportal),
+# so it needs the toy-catalog identity mapping described in build.yml; no stored tokens.
+#
+# The repo is PUBLIC and pull_request_target runs with a privileged token, so the job uses the
+# "frogbot" environment: add required reviewers to it (Settings -> Environments -> frogbot) so PRs
+# from forks are only scanned after a maintainer approves them.
+name: "Frogbot Security Scan"
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+  workflow_dispatch:
+  # Enable once the JFrog OIDC identity mapping exists:
+  # push:
+  #   branches: [main]
+  # schedule:
+  #   - cron: "0 0 * * *"
+
+permissions:
+  actions: read          # detect the GitHub Actions environment
+  id-token: write        # OIDC token for JFrog
+  security-events: write # upload code scanning results
+  pull-requests: write   # PR comments
+  contents: write        # fix PR branches
+
+jobs:
+  frogbot-scan:
+    runs-on: ubuntu-latest
+    environment: frogbot
+    strategy:
+      matrix:
+        branch: ["main"]
+    steps:
+      - uses: jfrog/frogbot@v2
+        env:
+          JF_URL: ${{ vars.JF_URL || 'https://solenglatest.jfrog.io' }}
+          JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JF_GIT_BASE_BRANCH: ${{ matrix.branch }}
+        with:
+          oidc-provider-name: github-docportal
